@@ -18,7 +18,7 @@ func (m *Message) Binary() ([]byte, error) {
 		return nil, err
 	}
 
-	q, err := m.Header.Binary()
+	q, err := m.Question.Binary()
 	if err != nil {
 		return nil, err
 	}
@@ -115,6 +115,8 @@ func (q *Question) Binary() ([]byte, error) {
 		buf.WriteByte(v.Length)
 		buf.Write(v.Content)
 	}
+
+	buf.WriteByte(0)
 
 	binary.Write(buf, binary.BigEndian, q.Type)
 	binary.Write(buf, binary.BigEndian, q.Class)
