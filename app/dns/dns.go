@@ -3,11 +3,13 @@ package dns
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 )
 
 type Message struct {
 	Header   Header
 	Question Question
+	Answer   Answer
 }
 
 func (m *Message) Binary() ([]byte, error) {
@@ -18,13 +20,25 @@ func (m *Message) Binary() ([]byte, error) {
 		return nil, err
 	}
 
-	q, err := m.Question.Binary()
-	if err != nil {
-		return nil, err
+	b = append(b, h...)
+
+	if m.Header.QDCount > 0 {
+		q, err := m.Question.Binary()
+		if err != nil {
+			return nil, err
+		}
+
+		b = append(b, q...)
 	}
 
-	b = append(b, h...)
-	b = append(b, q...)
+	if m.Header.ANCount > 0 {
+		a, err := m.Answer.Binary()
+		if err != nil {
+			return nil, err
+		}
+
+		b = append(b, a...)
+	}
 
 	return b, nil
 }
@@ -102,24 +116,82 @@ type DomainLabel struct {
 	Content []byte
 }
 
+func (d *DomainLabel) Binary() ([]byte, error) {
+	buf := new(bytes.Buffer)
+
+	err := buf.WriteByte(d.Length)
+	if err != nil {
+		return nil, err
+	}
+
+	n, err := buf.Write(d.Content)
+	if err != nil {
+		return nil, err
+	}
+
+	if n != len(d.Content) {
+		return nil, errors.New("should have written len of content into buf")
+	}
+
+	return buf.Bytes(), nil
+}
+
 type Question struct {
-	DomainLabels []DomainLabel
-	Type         [2]byte
-	Class        [2]byte
+	Name  []DomainLabel
+	Type  [2]byte
+	Class [2]byte
 }
 
 func (q *Question) Binary() ([]byte, error) {
 	buf := new(bytes.Buffer)
 
-	for _, v := range q.DomainLabels {
-		buf.WriteByte(v.Length)
-		buf.Write(v.Content)
+	for _, domainLabel := range q.Name {
+		b, err := domainLabel.Binary()
+		if err != nil {
+			return nil, err
+		}
+
+		buf.Write(b)
 	}
 
 	buf.WriteByte(0)
 
 	binary.Write(buf, binary.BigEndian, q.Type)
 	binary.Write(buf, binary.BigEndian, q.Class)
+
+	return buf.Bytes(), nil
+}
+
+type Answer struct {
+	Name     []DomainLabel
+	Type     [2]byte
+	Class    [2]byte
+	TTL      [4]byte
+	RDLength [2]byte
+	RData    []byte
+}
+
+func (a *Answer) Binary() ([]byte, error) {
+	buf := new(bytes.Buffer)
+
+	for _, domainLabel := range a.Name {
+		b, err := domainLabel.Binary()
+		if err != nil {
+			return nil, err
+		}
+
+		buf.Write(b)
+	}
+
+	buf.WriteByte(0)
+
+	binary.Write(buf, binary.BigEndian, a.Type)
+	binary.Write(buf, binary.BigEndian, a.Class)
+	binary.Write(buf, binary.BigEndian, a.TTL)
+	binary.Write(buf, binary.BigEndian, a.RDLength)
+	binary.Write(buf, binary.BigEndian,
+		a.RData[:binary.BigEndian.Uint16(a.RDLength[:])],
+	)
 
 	return buf.Bytes(), nil
 }

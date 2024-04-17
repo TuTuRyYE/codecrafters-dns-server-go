@@ -39,20 +39,32 @@ func main() {
 				ID:      1234,
 				QR:      true,
 				QDCount: 1,
+				ANCount: 1,
 			},
 			Question: dns.Question{
-				DomainLabels: []dns.DomainLabel{
+				Name: []dns.DomainLabel{
 					{Length: 12, Content: []byte("codecrafters")},
 					{Length: 2, Content: []byte("io")},
 				},
 				Type:  [2]byte{0, 1},
 				Class: [2]byte{0, 1},
 			},
+			Answer: dns.Answer{
+				Name: []dns.DomainLabel{
+					{Length: 12, Content: []byte("codecrafters")},
+					{Length: 2, Content: []byte("io")},
+				},
+				Type:     [2]byte{0, 1},
+				Class:    [2]byte{0, 1},
+				TTL:      [4]byte{0, 0, 0, 60},
+				RDLength: [2]byte{0, 4},
+				RData:    []byte{8, 8, 8, 8},
+			},
 		}
 
 		b, _ := message.Binary()
 
-		fmt.Printf("%b", b)
+		fmt.Printf("%o", b)
 
 		_, err = udpConn.WriteToUDP(b, source)
 		if err != nil {
