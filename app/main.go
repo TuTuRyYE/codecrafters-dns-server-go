@@ -1,10 +1,10 @@
 package main
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
 	"net"
+
+	"github.com/codecrafters-io/dns-server-starter-go/app/dns"
 )
 
 func main() {
@@ -34,11 +34,23 @@ func main() {
 		fmt.Printf("Received %d bytes from %s: %s\n", size, source, receivedData)
 
 		// Create an empty response
-		header := DNSHeader{
-			ID: 1234,
+		message := dns.Message{
+			Header: dns.Header{
+				ID:      1234,
+				QR:      true,
+				QDCount: 1,
+			},
+			Question: dns.Question{
+				DomainLabels: []dns.DomainLabel{
+					{Length: 12, Content: []byte("codecrafters")},
+					{Length: 2, Content: []byte("io")},
+				},
+				Type:  [2]byte{0, 1},
+				Class: [2]byte{0, 1},
+			},
 		}
 
-		b, _ := header.ToBinary()
+		b, _ := message.Binary()
 
 		fmt.Printf("%b", b)
 
@@ -47,50 +59,4 @@ func main() {
 			fmt.Println("Failed to send response:", err)
 		}
 	}
-}
-
-const Test = 0x101
-
-type DNSMessage struct {
-	Header [12]byte
-}
-
-type DNSHeader struct {
-	ID      uint16
-	QR      bool
-	OPCODE  uint16
-	AA      bool
-	TC      bool
-	RD      bool
-	RA      bool
-	Z       uint16
-	RCode   uint16
-	QDCount uint16
-	ANCount uint16
-	NSCount uint16
-	ARCount uint16
-}
-
-func (h *DNSHeader) FlagsToUint16() uint16 {
-	return uint16(1 << 15)
-}
-
-func (h *DNSHeader) ToBinary() ([]byte, error) {
-	values := []uint16{
-		h.ID,
-		h.FlagsToUint16(),
-		h.QDCount,
-		h.ANCount,
-		h.NSCount,
-		h.ARCount,
-	}
-
-	buf := new(bytes.Buffer)
-
-	err := binary.Write(buf, binary.BigEndian, values)
-	if err != nil {
-		return nil, err
-	}
-
-	return buf.Bytes(), nil
 }
