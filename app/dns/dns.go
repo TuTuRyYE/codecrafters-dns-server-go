@@ -59,6 +59,68 @@ type Header struct {
 	ARCount uint16
 }
 
+func ParseHeader(b []byte) (*Header, error) {
+	if len(b) != 12 {
+		return nil, errors.New("headers are 12 bytes long")
+	}
+
+	header, err := parseHeaderFlags(b[2:4])
+	if err != nil {
+		return nil, err
+	}
+
+	header.ID = binary.BigEndian.Uint16(b[0:2])
+	header.QDCount = binary.BigEndian.Uint16(b[4:6])
+	header.ANCount = binary.BigEndian.Uint16(b[6:8])
+	header.NSCount = binary.BigEndian.Uint16(b[8:10])
+	header.ARCount = binary.BigEndian.Uint16(b[10:12])
+
+	return header, nil
+}
+
+func parseHeaderFlags(b []byte) (*Header, error) {
+	if len(b) != 2 {
+		return nil, errors.New("header flags are encoded on 2 bytes")
+	}
+
+	flags := binary.BigEndian.Uint16(b)
+
+	header := &Header{}
+
+	qr := uint16(1 << 15)
+	if (flags & qr) == qr {
+		header.QR = true
+	}
+
+	header.OPCODE = flags & (15 << 11) >> 11
+
+	aa := uint16(1 << 10)
+	if (flags & aa) == aa {
+		header.AA = true
+	}
+
+	tc := uint16(1 << 9)
+	if (flags & tc) == tc {
+		header.TC = true
+	}
+
+	rd := uint16(1 << 8)
+	if (flags & rd) == rd {
+		header.RD = true
+	}
+
+	ra := uint16(1 << 7)
+	if (flags & ra) == ra {
+		header.RA = true
+	}
+
+	header.Z = flags & (7 << 4) >> 4
+
+	header.RCode = flags & 15
+
+	return header, nil
+}
+
 func (h *Header) FlagsToUint16() uint16 {
 	var flags uint16
 

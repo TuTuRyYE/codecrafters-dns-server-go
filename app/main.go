@@ -33,11 +33,25 @@ func main() {
 		receivedData := string(buf[:size])
 		fmt.Printf("Received %d bytes from %s: %s\n", size, source, receivedData)
 
+		receivedHeader, err := dns.ParseHeader(buf[:12])
+		if err != nil {
+			fmt.Println("Error parsing header:", err)
+			break
+		}
+
 		// Create an empty response
 		message := dns.Message{
 			Header: dns.Header{
-				ID:      1234,
-				QR:      true,
+				ID:     receivedHeader.ID,
+				QR:     true,
+				OPCODE: receivedHeader.OPCODE,
+				RD:     receivedHeader.RD,
+				RCode: func() uint16 {
+					if receivedHeader.OPCODE != 0 {
+						return 4
+					}
+					return 0
+				}(),
 				QDCount: 1,
 				ANCount: 1,
 			},
