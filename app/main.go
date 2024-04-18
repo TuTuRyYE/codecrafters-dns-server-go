@@ -39,6 +39,12 @@ func main() {
 			break
 		}
 
+		domainLabels, _, err := dns.ParseDomainLabels(buf[12:])
+		if err != nil {
+			fmt.Println("Error parsing domain labels:", err)
+			break
+		}
+
 		// Create an empty response
 		message := dns.Message{
 			Header: dns.Header{
@@ -56,18 +62,12 @@ func main() {
 				ANCount: 1,
 			},
 			Question: dns.Question{
-				Name: []dns.DomainLabel{
-					{Length: 12, Content: []byte("codecrafters")},
-					{Length: 2, Content: []byte("io")},
-				},
+				Name:  domainLabels,
 				Type:  [2]byte{0, 1},
 				Class: [2]byte{0, 1},
 			},
 			Answer: dns.Answer{
-				Name: []dns.DomainLabel{
-					{Length: 12, Content: []byte("codecrafters")},
-					{Length: 2, Content: []byte("io")},
-				},
+				Name:     domainLabels,
 				Type:     [2]byte{0, 1},
 				Class:    [2]byte{0, 1},
 				TTL:      [4]byte{0, 0, 0, 60},

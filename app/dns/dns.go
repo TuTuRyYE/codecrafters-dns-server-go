@@ -178,6 +178,27 @@ type DomainLabel struct {
 	Content []byte
 }
 
+func ParseDomainLabels(data []byte) ([]DomainLabel, int, error) {
+	if len(data) < 3 {
+		return nil, 0, errors.New("not enough data")
+	}
+
+	if data[0] == 0 {
+		return nil, 0, errors.New("starting domain label with 0 value should never occur")
+	}
+
+	var domainLabels []DomainLabel
+
+	startIndex := 0
+	for startIndex < len(data) && data[startIndex] != 0 {
+		length := data[startIndex]
+		domainLabels = append(domainLabels, DomainLabel{Length: length, Content: data[startIndex+1 : startIndex+int(length)+1]})
+		startIndex = startIndex + int(length) + 1
+	}
+
+	return domainLabels, startIndex, nil
+}
+
 func (d *DomainLabel) Binary() ([]byte, error) {
 	buf := new(bytes.Buffer)
 
