@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 )
 
 type Message struct {
-	Header   Header
-	Question Question
-	Answer   Answer
+	Header    Header
+	Questions []Question
+	Answers   []Answer
 }
 
 func (m *Message) Binary() ([]byte, error) {
@@ -22,22 +23,22 @@ func (m *Message) Binary() ([]byte, error) {
 
 	b = append(b, h...)
 
-	if m.Header.QDCount > 0 {
-		q, err := m.Question.Binary()
+	for _, q := range m.Questions {
+		qb, err := q.Binary()
 		if err != nil {
 			return nil, err
 		}
 
-		b = append(b, q...)
+		b = append(b, qb...)
 	}
 
-	if m.Header.ANCount > 0 {
-		a, err := m.Answer.Binary()
+	for _, a := range m.Answers {
+		ab, err := a.Binary()
 		if err != nil {
 			return nil, err
 		}
 
-		b = append(b, a...)
+		b = append(b, ab...)
 	}
 
 	return b, nil
@@ -178,25 +179,40 @@ type DomainLabel struct {
 	Content []byte
 }
 
-func ParseDomainLabels(data []byte) ([]DomainLabel, int, error) {
-	if len(data) < 3 {
-		return nil, 0, errors.New("not enough data")
+func ParseDomainLabels(startIndex int, data []byte, domainLabels *[]DomainLabel) (nextQuestionIndex int, err error) {
+	if len(data) < 3 || startIndex >= len(data) {
+		return 0, errors.New("not enough data")
 	}
 
-	if data[0] == 0 {
-		return nil, 0, errors.New("starting domain label with 0 value should never occur")
+	if data[startIndex]&0xC0 == 0xC0 {
+		pointer := binary.BigEndian.Uint16(data[startIndex : startIndex+2])
+		offset := int(pointer) & 0x3FFF //filtering offset value
+		return ParseDomainLabels(offset, data, domainLabels)
 	}
 
-	var domainLabels []DomainLabel
-
-	startIndex := 0
-	for startIndex < len(data) && data[startIndex] != 0 {
-		length := data[startIndex]
-		domainLabels = append(domainLabels, DomainLabel{Length: length, Content: data[startIndex+1 : startIndex+int(length)+1]})
-		startIndex = startIndex + int(length) + 1
+	if data[startIndex] == 0 {
+		return startIndex + 5, nil
 	}
 
-	return domainLabels, startIndex, nil
+	length := data[startIndex]
+	*domainLabels = append(*domainLabels, DomainLabel{Length: length, Content: data[startIndex+1 : startIndex+int(length)+1]})
+
+	return ParseDomainLabels(startIndex+int(length)+1, data, domainLabels)
+}
+
+func ParseQuestions(qdCount int, data []byte) (questions []Question, err error) {
+	//data is expected to be complete payload, with header having a size of 12
+	nextQuestionIndex := 12
+	for i := 0; i < qdCount; i++ {
+		domainLabels := []DomainLabel{}
+		nextQuestionIndex, err = ParseDomainLabels(nextQuestionIndex, data, &domainLabels)
+		if err != nil {
+			return nil, err
+		}
+		questions = append(questions, Question{Name: domainLabels, Type: 1, Class: 1})
+	}
+
+	return
 }
 
 func (d *DomainLabel) Binary() ([]byte, error) {
@@ -221,8 +237,8 @@ func (d *DomainLabel) Binary() ([]byte, error) {
 
 type Question struct {
 	Name  []DomainLabel
-	Type  [2]byte
-	Class [2]byte
+	Type  uint16
+	Class uint16
 }
 
 func (q *Question) Binary() ([]byte, error) {
@@ -247,10 +263,10 @@ func (q *Question) Binary() ([]byte, error) {
 
 type Answer struct {
 	Name     []DomainLabel
-	Type     [2]byte
-	Class    [2]byte
+	Type     uint16
+	Class    uint16
 	TTL      [4]byte
-	RDLength [2]byte
+	RDLength uint16
 	RData    []byte
 }
 
@@ -273,7 +289,7 @@ func (a *Answer) Binary() ([]byte, error) {
 	binary.Write(buf, binary.BigEndian, a.TTL)
 	binary.Write(buf, binary.BigEndian, a.RDLength)
 	binary.Write(buf, binary.BigEndian,
-		a.RData[:binary.BigEndian.Uint16(a.RDLength[:])],
+		a.RData[:a.RDLength],
 	)
 
 	return buf.Bytes(), nil

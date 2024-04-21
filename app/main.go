@@ -39,10 +39,21 @@ func main() {
 			break
 		}
 
-		domainLabels, _, err := dns.ParseDomainLabels(buf[12:])
+		questions, err := dns.ParseQuestions(int(receivedHeader.QDCount), buf[:size])
 		if err != nil {
 			fmt.Println("Error parsing domain labels:", err)
 			break
+		}
+
+		answers := []dns.Answer{}
+		for _, q := range questions {
+			answers = append(answers, dns.Answer{
+				Name:     q.Name,
+				Class:    q.Class,
+				Type:     q.Type,
+				TTL:      [4]byte{0, 0, 0, 60},
+				RDLength: 4,
+				RData:    []byte{8, 8, 8, 8}})
 		}
 
 		// Create an empty response
@@ -58,27 +69,24 @@ func main() {
 					}
 					return 0
 				}(),
-				QDCount: 1,
-				ANCount: 1,
+				QDCount: func() uint16 {
+					if receivedHeader.QDCount == 0 {
+						return 1
+					}
+					return receivedHeader.QDCount
+				}(),
+				ANCount: func() uint16 {
+					if receivedHeader.QDCount == 0 {
+						return 1
+					}
+					return receivedHeader.QDCount
+				}(),
 			},
-			Question: dns.Question{
-				Name:  domainLabels,
-				Type:  [2]byte{0, 1},
-				Class: [2]byte{0, 1},
-			},
-			Answer: dns.Answer{
-				Name:     domainLabels,
-				Type:     [2]byte{0, 1},
-				Class:    [2]byte{0, 1},
-				TTL:      [4]byte{0, 0, 0, 60},
-				RDLength: [2]byte{0, 4},
-				RData:    []byte{8, 8, 8, 8},
-			},
+			Questions: questions,
+			Answers:   answers,
 		}
 
 		b, _ := message.Binary()
-
-		fmt.Printf("%o", b)
 
 		_, err = udpConn.WriteToUDP(b, source)
 		if err != nil {
