@@ -1,22 +1,26 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net"
 
 	"github.com/codecrafters-io/dns-server-starter-go/app/dns"
 )
 
+var resolver string
+
 func main() {
-	udpAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:2053")
-	if err != nil {
-		fmt.Println("Failed to resolve UDP address:", err)
-		return
+	flag.StringVar(&resolver, "resolver", "", "")
+	flag.Parse()
+
+	if resolver != "" {
+		fmt.Printf("Fetching to resolver: %s", resolver)
 	}
 
-	udpConn, err := net.ListenUDP("udp", udpAddr)
+	udpConn, err := openDNSSocket()
 	if err != nil {
-		fmt.Println("Failed to bind to address:", err)
+		fmt.Println("failed to open udp conn:", err)
 		return
 	}
 	defer udpConn.Close()
@@ -33,64 +37,37 @@ func main() {
 		receivedData := string(buf[:size])
 		fmt.Printf("Received %d bytes from %s: %s\n", size, source, receivedData)
 
-		receivedHeader, err := dns.ParseHeader(buf[:12])
+		message, err := dns.ParseMessage(buf[:size])
 		if err != nil {
-			fmt.Println("Error parsing header:", err)
+			fmt.Println("Error parsing message:", err)
 			break
 		}
 
-		questions, err := dns.ParseQuestions(int(receivedHeader.QDCount), buf[:size])
+		newMessage, err := message.ChallengeResolver(resolver)
 		if err != nil {
-			fmt.Println("Error parsing domain labels:", err)
+			fmt.Println("Error parsing message:", err)
 			break
 		}
 
-		answers := []dns.Answer{}
-		for _, q := range questions {
-			answers = append(answers, dns.Answer{
-				Name:     q.Name,
-				Class:    q.Class,
-				Type:     q.Type,
-				TTL:      [4]byte{0, 0, 0, 60},
-				RDLength: 4,
-				RData:    []byte{8, 8, 8, 8}})
-		}
+		nb, _ := newMessage.Binary()
 
-		// Create an empty response
-		message := dns.Message{
-			Header: dns.Header{
-				ID:     receivedHeader.ID,
-				QR:     true,
-				OPCODE: receivedHeader.OPCODE,
-				RD:     receivedHeader.RD,
-				RCode: func() uint16 {
-					if receivedHeader.OPCODE != 0 {
-						return 4
-					}
-					return 0
-				}(),
-				QDCount: func() uint16 {
-					if receivedHeader.QDCount == 0 {
-						return 1
-					}
-					return receivedHeader.QDCount
-				}(),
-				ANCount: func() uint16 {
-					if receivedHeader.QDCount == 0 {
-						return 1
-					}
-					return receivedHeader.QDCount
-				}(),
-			},
-			Questions: questions,
-			Answers:   answers,
-		}
-
-		b, _ := message.Binary()
-
-		_, err = udpConn.WriteToUDP(b, source)
+		_, err = udpConn.WriteToUDP(nb, source)
 		if err != nil {
 			fmt.Println("Failed to send response:", err)
 		}
 	}
+}
+
+func openDNSSocket() (*net.UDPConn, error) {
+	udpAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:2053")
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve UDP address: %w", err)
+	}
+
+	udpConn, err := net.ListenUDP("udp", udpAddr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to listen UDP address: %w", err)
+	}
+
+	return udpConn, nil
 }
